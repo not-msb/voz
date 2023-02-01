@@ -20,5 +20,5 @@ fn main() {
             Op(Opcode::Write, 3, 1006, 2),
         ],
     );
-    vm.eval();
+    vm.eval().unwrap();
 }
