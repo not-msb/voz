@@ -3,7 +3,7 @@
 use std::{
     fmt::Debug,
     fs::File,
-    io::{stderr, stdout, Read, Write},
+    io::{stderr, stdout, Read, Write}, net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
 };
 
 #[repr(usize)]
@@ -49,6 +49,8 @@ pub enum Opcode {
     CreateFile,
     /// (src)
     LoadFile,
+    /// (src)
+    LoadConn,
     /// (val, src, val)
     Write,
 }
@@ -76,7 +78,8 @@ impl From<usize> for Opcode {
             17 => Opcode::LoadConst,
             18 => Opcode::CreateFile,
             19 => Opcode::LoadFile,
-            20 => Opcode::Write,
+            20 => Opcode::LoadConn,
+            21 => Opcode::Write,
             _ => unimplemented!(),
         }
     }
@@ -90,8 +93,8 @@ trait Buffer: Write + Read {}
 impl<T> Buffer for T where T: Write + Read {}
 
 pub struct Vm {
-    memory: [usize; 1024],
-    constants: Vec<Vec<usize>>,
+    pub memory: [usize; 1024],
+    pub constants: Vec<Vec<usize>>,
     buffers: Vec<Box<dyn Buffer>>,
     program: Vec<Op>,
     pointer: usize,
@@ -180,6 +183,10 @@ impl Vm {
                         .collect();
                     let file = File::open(filename).unwrap();
                     self.buffers.push(box file);
+                }
+                Opcode::LoadConn => {
+                    let stream = TcpStream::connect("127.0.0.1:80").unwrap();
+                    self.buffers.push(box stream);
                 }
                 Opcode::Write => {
                     let mut stdout = stdout();

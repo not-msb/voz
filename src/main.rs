@@ -20,4 +20,6 @@ fn main() {
 
     let mut vm = Vm::new(constants.into_iter().cloned().collect(), program);
     vm.eval();
+    // println!("{:?}", vm.memory);
+    // println!("{:?}", vm.constants);
 }
