@@ -1,15 +1,17 @@
 #![feature(box_syntax)]
 
 use std::{
+    error::Error,
     fmt::Debug,
     fs::File,
     io::{stderr, stdout, Read, Write},
+    net::{TcpListener, TcpStream},
 };
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
-    /// (val)
+    /// ()
     Hlt,
     /// (dst, val)
     Mov,
@@ -49,6 +51,10 @@ pub enum Opcode {
     CreateFile,
     /// (src)
     LoadFile,
+    /// (src)
+    LoadConn,
+    /// (src)
+    ListConn,
     /// (val, src, val)
     Write,
 }
@@ -76,7 +82,9 @@ impl From<usize> for Opcode {
             17 => Opcode::LoadConst,
             18 => Opcode::CreateFile,
             19 => Opcode::LoadFile,
-            20 => Opcode::Write,
+            20 => Opcode::LoadConn,
+            21 => Opcode::ListConn,
+            22 => Opcode::Write,
             _ => unimplemented!(),
         }
     }
@@ -90,8 +98,8 @@ trait Buffer: Write + Read {}
 impl<T> Buffer for T where T: Write + Read {}
 
 pub struct Vm {
-    memory: [usize; 1024],
-    constants: Vec<Vec<usize>>,
+    pub memory: [usize; 1024],
+    pub constants: Vec<Vec<usize>>,
     buffers: Vec<Box<dyn Buffer>>,
     program: Vec<Op>,
     pointer: usize,
@@ -111,16 +119,16 @@ impl Vm {
         }
     }
 
-    pub fn eval(&mut self) -> usize {
+    pub fn eval(&mut self) -> Result<(), Box<dyn Error>> {
         loop {
             if self.pointer >= self.program.len() {
-                break 0;
+                break Ok(());
             }
 
             let mut offset = 1;
             let op = &self.program[self.pointer];
             match op.0 {
-                Opcode::Hlt => break op.1,
+                Opcode::Hlt => break Ok(()),
                 Opcode::Mov => self.memory[op.1] = op.2,
                 Opcode::Dup => self.memory[op.1] = self.memory[op.2],
                 Opcode::Inc => self.memory[op.1] += 1,
@@ -168,18 +176,35 @@ impl Vm {
                 Opcode::CreateFile => {
                     let filename: String = self.constants[op.1]
                         .iter()
-                        .map(|u| char::from_u32(*u as u32).unwrap())
+                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
                         .collect();
-                    let file = File::create(filename).unwrap();
+                    let file = File::create(filename)?;
                     self.buffers.push(box file);
                 }
                 Opcode::LoadFile => {
                     let filename: String = self.constants[op.1]
                         .iter()
-                        .map(|u| char::from_u32(*u as u32).unwrap())
+                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
                         .collect();
-                    let file = File::open(filename).unwrap();
+                    let file = File::open(filename)?;
                     self.buffers.push(box file);
+                }
+                Opcode::LoadConn => {
+                    let addr: String = self.constants[op.1]
+                        .iter()
+                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
+                        .collect();
+                    let stream = TcpStream::connect(addr)?;
+                    self.buffers.push(box stream);
+                }
+                Opcode::ListConn => {
+                    let addr: String = self.constants[op.1]
+                        .iter()
+                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
+                        .collect();
+                    let listener = TcpListener::bind(addr)?;
+                    let (stream, _addr) = listener.accept()?;
+                    self.buffers.push(box stream);
                 }
                 Opcode::Write => {
                     let mut stdout = stdout();
@@ -194,7 +219,7 @@ impl Vm {
                         .iter()
                         .map(|u| *u as u8)
                         .collect();
-                    buffer.write_all(&src).unwrap()
+                    buffer.write_all(&src)?
                 }
                 _ => {}
             }

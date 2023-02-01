@@ -64,5 +64,5 @@ fn main() {
             Op(Opcode::Hlt, 0, 0, 0),
         ],
     );
-    vm.eval();
+    vm.eval().unwrap();
 }
