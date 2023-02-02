@@ -1,0 +1,2 @@
+#!/bin/sh
+env voz "Hello World!\n"  18 0 0 0  24 1 0 13

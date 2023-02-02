@@ -9,7 +9,7 @@ fn main() {
     for arg in &args {
         match arg.parse::<usize>() {
             Ok(_) => break,
-            Err(_) => constants.push(arg),
+            Err(_) => constants.push(arg.replace("\\n", "\n")),
         }
     }
 
@@ -22,8 +22,6 @@ fn main() {
         program.push(Op(Opcode::from(code[0]), code[1], code[2], code[3]));
     }
 
-    let mut vm = Vm::new(constants.into_iter().cloned().collect(), program);
-    vm.eval();
-    // println!("{:?}", vm.memory);
-    // println!("{:?}", vm.constants);
+    let mut vm = Vm::new(constants.into_iter().collect(), program);
+    vm.eval().unwrap();
 }

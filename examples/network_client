@@ -1,0 +1,2 @@
+#!/bin/sh
+env voz "127.0.0.1:8080" "Hello Connection\n"  22 0 0 0  18 0 1 0  24 3 0 18

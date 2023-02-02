@@ -4,7 +4,7 @@ use std::{
     error::Error,
     fmt::Debug,
     fs::File,
-    io::{stderr, stdout, Read, Write},
+    io::{stderr, stdin, stdout, Read, Write},
     net::{TcpListener, TcpStream},
 };
 
@@ -13,6 +13,8 @@ use std::{
 pub enum Opcode {
     /// ()
     Hlt,
+    /// ()
+    Ret,
     /// (dst, val)
     Mov,
     /// (dst, src)
@@ -29,6 +31,8 @@ pub enum Opcode {
     Mul,
     /// (dst, src)
     Div,
+    /// (dst)
+    Call,
     /// (dst)
     Jmp,
     /// (dst, src, src)
@@ -57,34 +61,39 @@ pub enum Opcode {
     ListConn,
     /// (val, src, val)
     Write,
+    /// (val, dst, val)
+    Read,
 }
 
 impl From<usize> for Opcode {
     fn from(value: usize) -> Self {
         match value {
             0 => Opcode::Hlt,
-            1 => Opcode::Mov,
-            2 => Opcode::Dup,
-            3 => Opcode::Inc,
-            4 => Opcode::Dec,
-            5 => Opcode::Add,
-            6 => Opcode::Sub,
-            7 => Opcode::Mul,
-            8 => Opcode::Div,
-            9 => Opcode::Jmp,
-            10 => Opcode::Je,
-            11 => Opcode::Jne,
-            12 => Opcode::Jg,
-            13 => Opcode::Jge,
-            14 => Opcode::Jl,
-            15 => Opcode::Jle,
-            16 => Opcode::MovConst,
-            17 => Opcode::LoadConst,
-            18 => Opcode::CreateFile,
-            19 => Opcode::LoadFile,
-            20 => Opcode::LoadConn,
-            21 => Opcode::ListConn,
-            22 => Opcode::Write,
+            1 => Opcode::Ret,
+            2 => Opcode::Mov,
+            3 => Opcode::Dup,
+            4 => Opcode::Inc,
+            5 => Opcode::Dec,
+            6 => Opcode::Add,
+            7 => Opcode::Sub,
+            8 => Opcode::Mul,
+            9 => Opcode::Div,
+            10 => Opcode::Call,
+            11 => Opcode::Jmp,
+            12 => Opcode::Je,
+            13 => Opcode::Jne,
+            14 => Opcode::Jg,
+            15 => Opcode::Jge,
+            16 => Opcode::Jl,
+            17 => Opcode::Jle,
+            18 => Opcode::MovConst,
+            19 => Opcode::LoadConst,
+            20 => Opcode::CreateFile,
+            21 => Opcode::LoadFile,
+            22 => Opcode::LoadConn,
+            23 => Opcode::ListConn,
+            24 => Opcode::Write,
+            25 => Opcode::Read,
             _ => unimplemented!(),
         }
     }
@@ -98,9 +107,10 @@ trait Buffer: Write + Read {}
 impl<T> Buffer for T where T: Write + Read {}
 
 pub struct Vm {
-    pub memory: [usize; 1024],
-    pub constants: Vec<Vec<usize>>,
+    memory: [usize; 1024],
+    constants: Vec<Vec<usize>>,
     buffers: Vec<Box<dyn Buffer>>,
+    calls: Vec<usize>,
     program: Vec<Op>,
     pointer: usize,
 }
@@ -114,6 +124,7 @@ impl Vm {
                 .map(|c| c.chars().into_iter().map(|c| c as usize).collect())
                 .collect(),
             buffers: vec![],
+            calls: vec![],
             program,
             pointer: 0,
         }
@@ -129,6 +140,10 @@ impl Vm {
             let op = &self.program[self.pointer];
             match op.0 {
                 Opcode::Hlt => break Ok(()),
+                Opcode::Ret => {
+                    offset = 0;
+                    self.pointer = *self.calls.last().unwrap();
+                }
                 Opcode::Mov => self.memory[op.1] = op.2,
                 Opcode::Dup => self.memory[op.1] = self.memory[op.2],
                 Opcode::Inc => self.memory[op.1] += 1,
@@ -137,6 +152,11 @@ impl Vm {
                 Opcode::Sub => self.memory[op.1] -= self.memory[op.2],
                 Opcode::Mul => self.memory[op.1] *= self.memory[op.2],
                 Opcode::Div => self.memory[op.1] /= self.memory[op.2],
+                Opcode::Call => {
+                    self.calls.push(self.pointer);
+                    offset = 0;
+                    self.pointer = op.1;
+                }
                 Opcode::Jmp => {
                     offset = 0;
                     self.pointer = op.1;
@@ -220,6 +240,19 @@ impl Vm {
                         .map(|u| *u as u8)
                         .collect();
                     buffer.write_all(&src)?
+                }
+                Opcode::Read => {
+                    let mut stdin = stdin();
+                    let buffer: &mut dyn Read = match op.1 {
+                        0 => &mut stdin,
+                        1 => panic!("Can't read from stdout!"),
+                        2 => panic!("Can't read from stderr!"),
+                        n => &mut self.buffers[n - 3],
+                    };
+                    let mut src = vec![0; op.3];
+                    buffer.read_exact(&mut src).unwrap();
+                    let src: Vec<usize> = src.iter().map(|b| *b as usize).collect();
+                    self.memory[op.2..op.2 + op.3].copy_from_slice(&src);
                 }
                 _ => {}
             }
