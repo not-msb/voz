@@ -1,11 +1,8 @@
 #![feature(box_syntax)]
 
 use std::{
-    error::Error,
     fmt::Debug,
-    fs::File,
-    io::{stderr, stdin, stdout, Read, Write},
-    net::{TcpListener, TcpStream},
+    io::{Read, Write}, fs::File,
 };
 
 #[repr(usize)]
@@ -65,8 +62,8 @@ pub enum Opcode {
     Read,
 }
 
-impl From<usize> for Opcode {
-    fn from(value: usize) -> Self {
+impl From<u32> for Opcode {
+    fn from(value: u32) -> Self {
         match value {
             0 => Opcode::Hlt,
             1 => Opcode::Ret,
@@ -99,165 +96,102 @@ impl From<usize> for Opcode {
     }
 }
 
+impl From<Opcode> for &str {
+    fn from(opcode: Opcode) -> Self {
+        match opcode {
+            Opcode::Jmp => "jmp",
+            Opcode::Je => "je",
+            Opcode::Jne => "jne",
+            Opcode::Jg => "jg",
+            Opcode::Jge => "jge",
+            Opcode::Jl => "jl",
+            Opcode::Jle => "jle",
+            _ => unimplemented!()
+        }
+    }
+}
+
 // Op :: opcode, operand1, operand2, operand3
 #[derive(Debug, Clone, Copy)]
-pub struct Op(pub Opcode, pub usize, pub usize, pub usize);
+pub struct Op(pub Opcode, pub u32, pub u32, pub u32);
 
 trait Buffer: Write + Read {}
 impl<T> Buffer for T where T: Write + Read {}
 
-pub struct Vm {
-    memory: [usize; 1024],
-    constants: Vec<Vec<usize>>,
-    buffers: Vec<Box<dyn Buffer>>,
-    calls: Vec<usize>,
+pub struct Compiler {
+    constants: Vec<String>,
+    jumps: Vec<u32>,
     program: Vec<Op>,
     pointer: usize,
 }
 
-impl Vm {
-    pub fn new(constants: Vec<String>, program: Vec<Op>) -> Vm {
-        Vm {
-            memory: [0; 1024],
-            constants: constants
-                .iter()
-                .map(|c| c.chars().into_iter().map(|c| c as usize).collect())
-                .collect(),
-            buffers: vec![],
-            calls: vec![],
+impl Compiler {
+    pub fn new(constants: Vec<String>, program: Vec<Op>) -> Compiler {
+        Compiler {
+            constants,
+            jumps: vec![],
             program,
             pointer: 0,
         }
     }
 
-    pub fn eval(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn compile(&mut self) {
+        use Opcode::*;
+
+        let mut file = File::create("out.asm").unwrap();
+        let mut buffer = vec![];
+
+        file.write_all("global _start\nsection .text\n_start:\npush rbp\nmov rbp, rsp\n".as_bytes()).unwrap();
+
         loop {
             if self.pointer >= self.program.len() {
-                break Ok(());
+                break;
             }
 
-            let mut offset = 1;
             let op = &self.program[self.pointer];
-            match op.0 {
-                Opcode::Hlt => break Ok(()),
-                Opcode::Ret => {
-                    offset = 0;
-                    self.pointer = *self.calls.last().unwrap();
-                }
-                Opcode::Mov => self.memory[op.1] = op.2,
-                Opcode::Dup => self.memory[op.1] = self.memory[op.2],
-                Opcode::Inc => self.memory[op.1] += 1,
-                Opcode::Dec => self.memory[op.1] -= 1,
-                Opcode::Add => self.memory[op.1] += self.memory[op.2],
-                Opcode::Sub => self.memory[op.1] -= self.memory[op.2],
-                Opcode::Mul => self.memory[op.1] *= self.memory[op.2],
-                Opcode::Div => self.memory[op.1] /= self.memory[op.2],
-                Opcode::Call => {
-                    self.calls.push(self.pointer);
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jmp => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Je if self.memory[op.2] == self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jne if self.memory[op.2] != self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jg if self.memory[op.2] > self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jge if self.memory[op.2] >= self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jl if self.memory[op.2] < self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::Jle if self.memory[op.2] <= self.memory[op.3] => {
-                    offset = 0;
-                    self.pointer = op.1;
-                }
-                Opcode::MovConst => {
-                    let src = &self.constants[op.2];
-                    self.memory[op.1..op.1 + src.len()].copy_from_slice(src);
-                }
-                Opcode::LoadConst => {
-                    let src = &self.memory[op.1..op.1 + op.2];
-                    self.constants.push(src.to_vec());
-                }
-                Opcode::CreateFile => {
-                    let filename: String = self.constants[op.1]
-                        .iter()
-                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
-                        .collect();
-                    let file = File::create(filename)?;
-                    self.buffers.push(box file);
-                }
-                Opcode::LoadFile => {
-                    let filename: String = self.constants[op.1]
-                        .iter()
-                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
-                        .collect();
-                    let file = File::open(filename)?;
-                    self.buffers.push(box file);
-                }
-                Opcode::LoadConn => {
-                    let addr: String = self.constants[op.1]
-                        .iter()
-                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
-                        .collect();
-                    let stream = TcpStream::connect(addr)?;
-                    self.buffers.push(box stream);
-                }
-                Opcode::ListConn => {
-                    let addr: String = self.constants[op.1]
-                        .iter()
-                        .map(|u| unsafe { char::from_u32_unchecked(*u as u32) })
-                        .collect();
-                    let listener = TcpListener::bind(addr)?;
-                    let (stream, _addr) = listener.accept()?;
-                    self.buffers.push(box stream);
-                }
-                Opcode::Write => {
-                    let mut stdout = stdout();
-                    let mut stderr = stderr();
-                    let buffer: &mut dyn Write = match op.1 {
-                        0 => panic!("Can't write to stdin!"),
-                        1 => &mut stdout,
-                        2 => &mut stderr,
-                        n => &mut self.buffers[n - 3],
-                    };
-                    let src: Vec<u8> = self.memory[op.2..op.2 + op.3]
-                        .iter()
-                        .map(|u| *u as u8)
-                        .collect();
-                    buffer.write_all(&src)?
-                }
-                Opcode::Read => {
-                    let mut stdin = stdin();
-                    let buffer: &mut dyn Read = match op.1 {
-                        0 => &mut stdin,
-                        1 => panic!("Can't read from stdout!"),
-                        2 => panic!("Can't read from stderr!"),
-                        n => &mut self.buffers[n - 3],
-                    };
-                    let mut src = vec![0; op.3];
-                    buffer.read_exact(&mut src).unwrap();
-                    let src: Vec<usize> = src.iter().map(|b| *b as usize).collect();
-                    self.memory[op.2..op.2 + op.3].copy_from_slice(&src);
-                }
-                _ => {}
-            }
 
-            self.pointer += offset;
+            let line = match op.0 {
+                Hlt => format!("jmp exit"),
+                Ret => format!("ret"),
+                Mov => format!("push {}", op.2),
+                Dup => todo!(),
+                Inc => todo!(),
+                Dec => todo!(),
+                Add => format!("mov rax, [rbp-{}]\nadd rax, [rbp-{}]\nmov [rbp-{}], rax",        op.1*8+8, op.2*8+8, op.1*8+8),
+                Sub => format!("mov rax, [rbp-{}]\nsub rax, [rbp-{}]\nmov [rbp-{}], rax",        op.1*8+8, op.2*8+8, op.1*8+8),
+                Mul => format!("mov rax, [rbp-{}]\nmul [rbp-{}]\nmov [rbp-{}], rax",             op.1*8+8, op.2*8+8, op.1*8+8),
+                Div => format!("mov rdx, 0\nmov rax, [rbp-{}]\ndiv [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
+                Call => format!("call {}", self.constants[op.1 as usize]),
+                Jmp | Je | Jne | Jg | Jge | Jl | Jle => {
+                    if !self.jumps.contains(&op.1) {
+                        self.jumps.push(op.1);
+                    }
+                    format!("mov rax, [rbp-{}]\ncmp rax, [rbp-{}]\n{} l{}", op.2*8+8, op.3*8+8, Into::<&str>::into(op.0), op.1)
+                }
+                MovConst => todo!(),
+                LoadConst => todo!(),
+                CreateFile => todo!(),
+                LoadFile => todo!(),
+                LoadConn => todo!(),
+                ListConn => todo!(),
+                Write => format!("mov rax, 1\nmov rdi, {}\nsub rbp, {}\nmov rsi, rbp\nadd rbp, {}\nmov rdx, {}\nsyscall", op.1, op.2*8+8, op.2*8+8, op.3),
+                Read => todo!(),
+            };
+
+            buffer.push(line);
+
+            self.pointer += 1;
         }
+
+        self.jumps.sort();
+        for (offset, jump) in self.jumps.iter().map(|u| *u as usize).enumerate() {
+            buffer.insert(jump+offset, format!("l{}:", jump));
+        }
+
+        let mut connected = buffer.join("\n");
+        connected.push('\n');
+        file.write_all(connected.as_bytes()).unwrap();
+
+        file.write_all("exit:\nmov rsp, rbp\npop rbp\nmov rax, 60\nmov rdi, 0\nsyscall\n".as_bytes()).unwrap();
     }
 }

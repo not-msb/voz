@@ -13,7 +13,7 @@ fn main() {
         }
     }
 
-    let bytecode: Vec<usize> = args
+    let bytecode: Vec<u32> = args
         .iter()
         .skip(constants.len())
         .map(|arg| arg.parse().unwrap())
@@ -22,6 +22,6 @@ fn main() {
         program.push(Op(Opcode::from(code[0]), code[1], code[2], code[3]));
     }
 
-    let mut vm = Vm::new(constants.into_iter().collect(), program);
-    vm.eval().unwrap();
+    let mut compiler = Compiler::new(constants.into_iter().collect(), program);
+    compiler.compile();
 }
