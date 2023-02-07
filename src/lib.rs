@@ -138,7 +138,7 @@ impl Compiler {
     pub fn compile(&mut self) {
         use Opcode::*;
 
-        let mut file = File::create("out.asm").unwrap();
+        let mut file = File::create("build/out.asm").unwrap();
         let mut buffer = vec![];
 
         file.write_all("global _start\nsection .text\n_start:\npush rbp\nmov rbp, rsp\n".as_bytes()).unwrap();
