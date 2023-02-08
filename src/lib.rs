@@ -1,9 +1,12 @@
 #![feature(box_syntax)]
 
+mod asm_string;
+
 use std::{
     fmt::Debug,
     io::{Read, Write}, fs::File,
 };
+use asm_string::*;
 
 #[repr(usize)]
 #[derive(Debug, Clone, Copy)]
@@ -46,8 +49,6 @@ pub enum Opcode {
     Jle,
     /// (dst, src)
     MovConst,
-    /// (src, val)
-    LoadConst,
     /// (src)
     CreateFile,
     /// (src)
@@ -84,7 +85,6 @@ impl From<u32> for Opcode {
             16 => Opcode::Jl,
             17 => Opcode::Jle,
             18 => Opcode::MovConst,
-            19 => Opcode::LoadConst,
             20 => Opcode::CreateFile,
             21 => Opcode::LoadFile,
             22 => Opcode::LoadConn,
@@ -151,8 +151,8 @@ impl Compiler {
             let op = &self.program[self.pointer];
 
             let line = match op.0 {
-                Hlt => format!("jmp exit"),
-                Ret => format!("ret"),
+                Hlt => "jmp exit".to_string(),
+                Ret => "ret".to_string(),
                 Mov => format!("push {}", op.2),
                 Dup => todo!(),
                 Inc => todo!(),
@@ -168,13 +168,12 @@ impl Compiler {
                     }
                     format!("mov rax, [rbp-{}]\ncmp rax, [rbp-{}]\n{} l{}", op.2*8+8, op.3*8+8, Into::<&str>::into(op.0), op.1)
                 }
-                MovConst => todo!(),
-                LoadConst => todo!(),
+                MovConst => format!("mov rax, c{}\nmov [rbp-{}], rax", op.2, op.1*8+8),
                 CreateFile => todo!(),
                 LoadFile => todo!(),
                 LoadConn => todo!(),
                 ListConn => todo!(),
-                Write => format!("mov rax, 1\nmov rdi, {}\nsub rbp, {}\nmov rsi, rbp\nadd rbp, {}\nmov rdx, {}\nsyscall", op.1, op.2*8+8, op.2*8+8, op.3),
+                Write => format!("mov rax, 1\nmov rdi, {}\nmov rsi, [rbp-{}]\nmov rdx, {}\nsyscall", op.1, op.2*8+8, op.3),
                 Read => todo!(),
             };
 
@@ -185,13 +184,19 @@ impl Compiler {
 
         self.jumps.sort();
         for (offset, jump) in self.jumps.iter().map(|u| *u as usize).enumerate() {
-            buffer.insert(jump+offset, format!("l{}:", jump));
+            buffer.insert(jump+offset, format!("l{jump}:"));
         }
 
         let mut connected = buffer.join("\n");
         connected.push('\n');
         file.write_all(connected.as_bytes()).unwrap();
-
+        
         file.write_all("exit:\nmov rsp, rbp\npop rbp\nmov rax, 60\nmov rdi, 0\nsyscall\n".as_bytes()).unwrap();
+
+        file.write_all("section .data\n".as_bytes()).unwrap();
+        for (i, constant) in self.constants.iter().enumerate() {
+            let astr = AsmString(constant);
+            file.write_all(format!("c{i} db {astr}\nc{i}_len equ $-c{i}\n").as_bytes()).unwrap();
+        }
     }
 }
