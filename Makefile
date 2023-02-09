@@ -12,4 +12,4 @@ example_arithmetic:
 example_string:
 	target/release/voz "Hello World!\n" 18 0 0 0  24 1 0 13
 example_img:
-	target/release/voz "P1 2 2\n" "0 " "1 " 18 0 0 0  24 1 0 7  18 1 1 0  18 2 2 0  24 1 2 2  24 1 1 2  24 1 1 2  24 1 2 2
+	target/release/voz "img.ppm" "P1 2 2\n" "0 " "1 "  18 0 0 0  20 0 0 0 18 1 1 0  24 3 1 7  18 2 2 0  18 3 3 0  24 3 3 2  24 3 2 2  24 3 2 2  24 3 3 2

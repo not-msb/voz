@@ -26,6 +26,8 @@ impl<'a> Display for AsmString<'a> {
             buffer.push('"');
         }
 
+        buffer.push_str(", 0");
+
         f.write_str(&buffer)
     }
 }

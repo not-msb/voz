@@ -1,5 +1,3 @@
-#![feature(box_syntax)]
-
 mod asm_string;
 
 use std::{
@@ -96,16 +94,19 @@ impl From<u32> for Opcode {
     }
 }
 
-impl From<Opcode> for &str {
-    fn from(opcode: Opcode) -> Self {
-        match opcode {
-            Opcode::Jmp => "jmp",
-            Opcode::Je => "je",
-            Opcode::Jne => "jne",
-            Opcode::Jg => "jg",
-            Opcode::Jge => "jge",
-            Opcode::Jl => "jl",
-            Opcode::Jle => "jle",
+impl Opcode {
+    fn as_str(&self) -> &str {
+        use Opcode::*;
+        match self {
+            Inc => "inc",
+            Dec => "dec",
+            Jmp => "jmp",
+            Je => "je",
+            Jne => "jne",
+            Jg => "jg",
+            Jge => "jge",
+            Jl => "jl",
+            Jle => "jle",
             _ => unimplemented!()
         }
     }
@@ -155,25 +156,30 @@ impl Compiler {
                 Ret => "ret".to_string(),
                 Mov => format!("push {}", op.2),
                 Dup => todo!(),
-                Inc => todo!(),
-                Dec => todo!(),
-                Add => format!("mov rax, [rbp-{}]\nadd rax, [rbp-{}]\nmov [rbp-{}], rax",        op.1*8+8, op.2*8+8, op.1*8+8),
-                Sub => format!("mov rax, [rbp-{}]\nsub rax, [rbp-{}]\nmov [rbp-{}], rax",        op.1*8+8, op.2*8+8, op.1*8+8),
-                Mul => format!("mov rax, [rbp-{}]\nmul [rbp-{}]\nmov [rbp-{}], rax",             op.1*8+8, op.2*8+8, op.1*8+8),
+                Inc | Dec => format!("mov rax, [rbp-{}]\n{} rax\nmov [rbp-{}], rax", op.1*8+8, op.0.as_str(), op.1*8+8),
+                Add => format!("mov rax, [rbp-{}]\nadd rax, [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
+                Sub => format!("mov rax, [rbp-{}]\nsub rax, [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
+                Mul => format!("mov rax, [rbp-{}]\nmul [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
                 Div => format!("mov rdx, 0\nmov rax, [rbp-{}]\ndiv [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
                 Call => format!("call {}", self.constants[op.1 as usize]),
                 Jmp | Je | Jne | Jg | Jge | Jl | Jle => {
                     if !self.jumps.contains(&op.1) {
                         self.jumps.push(op.1);
                     }
-                    format!("mov rax, [rbp-{}]\ncmp rax, [rbp-{}]\n{} l{}", op.2*8+8, op.3*8+8, Into::<&str>::into(op.0), op.1)
+                    format!("mov rax, [rbp-{}]\ncmp rax, [rbp-{}]\n{} l{}", op.2*8+8, op.3*8+8, op.0.as_str(), op.1)
                 }
                 MovConst => format!("mov rax, c{}\nmov [rbp-{}], rax", op.2, op.1*8+8),
-                CreateFile => todo!(),
+                CreateFile => format!("mov rax, 85\nmov rdi, c{}\nmov rsi, 0o666\nsyscall\nsub rbp, {}\nmov [rbp], rax\nadd rbp, {}", op.1, op.2*8+8, op.2*8+8),
                 LoadFile => todo!(),
                 LoadConn => todo!(),
                 ListConn => todo!(),
-                Write => format!("mov rax, 1\nmov rdi, {}\nmov rsi, [rbp-{}]\nmov rdx, {}\nsyscall", op.1, op.2*8+8, op.3),
+                Write => {
+                    if op.1 < 3 {
+                        format!("mov rax, 1\nmov rdi, {}\nmov rsi, [rbp-{}]\nmov rdx, {}\nsyscall", op.1, op.2*8+8, op.3)
+                    } else {
+                        format!("mov rax, 1\nmov rdi, [rbp-{}]\nmov rsi, [rbp-{}]\nmov rdx, {}\nsyscall", (op.1-3)*8+8, op.2*8+8, op.3)
+                    }
+                },
                 Read => todo!(),
             };
 
