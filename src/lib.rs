@@ -155,7 +155,7 @@ impl Compiler {
                 Hlt => "jmp exit".to_string(),
                 Ret => "ret".to_string(),
                 Mov => format!("push {}", op.2),
-                Dup => todo!(),
+                Dup => format!("mov rax, [rbp-{}]\nmov [rbp-{}], rax", op.2*8+8, op.1*8+8),
                 Inc | Dec => format!("mov rax, [rbp-{}]\n{} rax\nmov [rbp-{}], rax", op.1*8+8, op.0.as_str(), op.1*8+8),
                 Add => format!("mov rax, [rbp-{}]\nadd rax, [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
                 Sub => format!("mov rax, [rbp-{}]\nsub rax, [rbp-{}]\nmov [rbp-{}], rax", op.1*8+8, op.2*8+8, op.1*8+8),
@@ -170,7 +170,7 @@ impl Compiler {
                 }
                 MovConst => format!("mov rax, c{}\nmov [rbp-{}], rax", op.2, op.1*8+8),
                 CreateFile => format!("mov rax, 85\nmov rdi, c{}\nmov rsi, 0o666\nsyscall\nsub rbp, {}\nmov [rbp], rax\nadd rbp, {}", op.1, op.2*8+8, op.2*8+8),
-                LoadFile => todo!(),
+                LoadFile => format!("mov rax, 2\nmov rdi, c{}\nmov rsi, 0o2\nmov rdx, 0o666\nsyscall\nsub rbp, {}\nmov [rbp], rax\nadd rbp, {}", op.1, op.2*8+8, op.2*8+8),
                 LoadConn => todo!(),
                 ListConn => todo!(),
                 Write => {
